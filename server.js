@@ -20,6 +20,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Mount API routes
 app.use('/api', apiRoutes);
 
+// Also accept direct POST to root as fallback for sensor data ingestion
+app.post('/', (req, res, next) => {
+  req.url = '/sensor-data';
+  apiRoutes(req, res, next);
+});
+
 // Health check endpoint for Render
 app.get('/health', (req, res) => {
   res.status(200).json({

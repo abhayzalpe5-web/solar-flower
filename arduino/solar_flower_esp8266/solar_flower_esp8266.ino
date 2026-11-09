@@ -57,7 +57,7 @@ const char* password = "000000000";
 
 // Render Cloud Backend URL
 // Replace "smart-solar-flower" with your exact Render app name if different
-const char* serverUrl = "https://smart-solar-flower.onrender.com/api/sensor-data";
+const char* serverUrl = "https://solar-flower-4.onrender.com";
 
 // Live Measurement & Accumulator Variables
 float busVoltage_V = 0.0;
@@ -215,8 +215,18 @@ void showIntroSplash() {
   delay(2000); // 2-second intro screen duration
 }
 
+// Helper function to print text perfectly centered within any block/region
+void printCenteredInBlock(const String &text, int y, int startX, int blockWidth) {
+  int charWidth = 6; // Standard 5x7 Adafruit font is 6px per character (5px glyph + 1px spacing)
+  int textWidth = text.length() * charWidth;
+  int x = startX + (blockWidth - textWidth) / 2;
+  if (x < startX + 2) x = startX + 2;
+  display.setCursor(x, y);
+  display.print(text);
+}
+
 // =========================================================================================
-// 2. LIVE TELEMETRY: All readings on one screen in a 5-block dashboard grid (No Slideshow)
+// 2. LIVE TELEMETRY: All readings perfectly centered inside each dashboard block
 // =========================================================================================
 void updateOledDisplay() {
   display.clearDisplay();
@@ -226,63 +236,55 @@ void updateOledDisplay() {
   display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
 
   // Grid Dividers separating the 5 blocks
-  display.drawLine(64, 0, 64, 48, SSD1306_WHITE);  // Vertical divider between left and right blocks
-  display.drawLine(0, 24, 128, 24, SSD1306_WHITE); // Horizontal divider between row 1 and row 2
-  display.drawLine(0, 48, 128, 48, SSD1306_WHITE); // Horizontal divider above bottom cost block
+  display.drawLine(64, 0, 64, 48, SSD1306_WHITE);  // Vertical center divider
+  display.drawLine(0, 24, 128, 24, SSD1306_WHITE); // Horizontal divider between row 1 & row 2
+  display.drawLine(0, 48, 128, 48, SSD1306_WHITE); // Horizontal divider above bottom cost bar
 
   display.setTextSize(1);
 
-  // --- BLOCK 1: VOLTAGE (Top-Left Box) ---
-  display.setCursor(4, 3);
-  display.print("VOLT (V)");
-  display.setCursor(6, 13);
-  display.print(busVoltage_V, 2);
-  display.print(" V");
+  // --- BLOCK 1: VOLTAGE (Top-Left: Centered in 0..64) ---
+  printCenteredInBlock("VOLTAGE", 3, 0, 64);
+  String vStr = String(busVoltage_V, 2) + " V";
+  printCenteredInBlock(vStr, 13, 0, 64);
 
-  // --- BLOCK 2: CURRENT (Top-Right Box) ---
-  display.setCursor(68, 3);
-  display.print("CURR (I)");
-  display.setCursor(70, 13);
+  // --- BLOCK 2: CURRENT (Top-Right: Centered in 64..128) ---
+  printCenteredInBlock("CURRENT", 3, 64, 64);
+  String iStr;
   if (current_mA >= 1000.0) {
-    display.print(current_mA / 1000.0, 2);
-    display.print(" A");
+    iStr = String(current_mA / 1000.0, 2) + " A";
   } else {
-    display.print(current_mA, 0);
-    display.print(" mA");
+    iStr = String(current_mA, 0) + " mA";
   }
+  printCenteredInBlock(iStr, 13, 64, 64);
 
-  // --- BLOCK 3: POWER (Mid-Left Box) ---
-  display.setCursor(4, 27);
-  display.print("POW (W)");
-  display.setCursor(6, 37);
-  display.print(power_W, 2);
-  display.print(" W");
+  // --- BLOCK 3: POWER (Mid-Left: Centered in 0..64) ---
+  printCenteredInBlock("POWER", 27, 0, 64);
+  String pStr = String(power_W, 2) + " W";
+  printCenteredInBlock(pStr, 37, 0, 64);
 
-  // --- BLOCK 4: ENERGY (Mid-Right Box) ---
-  display.setCursor(68, 27);
-  display.print("ENERGY");
-  display.setCursor(70, 37);
+  // --- BLOCK 4: ENERGY (Mid-Right: Centered in 64..128) ---
+  printCenteredInBlock("ENERGY", 27, 64, 64);
+  String eStr;
   if (energy_Wh >= 1000.0) {
-    display.print(energy_kWh, 3);
-    display.print(" kWh");
+    eStr = String(energy_kWh, 3) + " kWh";
   } else {
-    display.print(energy_Wh, 1);
-    display.print(" Wh");
+    eStr = String(energy_Wh, 1) + " Wh";
   }
+  printCenteredInBlock(eStr, 37, 64, 64);
 
-  // --- BLOCK 5: COST & RENDER STATUS (Bottom Full-Width Highlight Bar) ---
+  // --- BLOCK 5: COST & CLOUD STATUS (Bottom Bar: Centered in 0..128) ---
   // Inverted white background bar for maximum visibility
   display.fillRect(1, 49, 126, 14, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK); // Black text on white bar
 
-  display.setCursor(4, 52);
-  display.print("Rs:");
-  display.print(cost_INR, 2);
-
-  display.setCursor(60, 52);
+  String bottomStr = "Rs: " + String(cost_INR, 2) + "  @ 4.32";
   if (cloudSyncSuccess) {
-    display.print("RNDR:OK 4.32");
-  } else if (WiFi.status() == WL_CONNECTED) {
+    bottomStr = "Rs:" + String(cost_INR, 2) + " [RNDR:OK]";
+  }
+  printCenteredInBlock(bottomStr, 52, 0, 128);
+
+  display.display();
+}
     display.print("RNDR:.. 4.32");
   } else {
     display.print("NO-WIFI 4.32");
@@ -329,16 +331,26 @@ void sendTelemetry() {
   jsonPayload += "\"cost_inr\":" + String(cost_INR, 4);
   jsonPayload += "}";
 
+  // Auto-resolve endpoint path if base URL was entered
+  String fullUrl = String(serverUrl);
+  if (!fullUrl.endsWith("/api/sensor-data") && !fullUrl.endsWith("/api/readings")) {
+    if (fullUrl.endsWith("/")) {
+      fullUrl += "api/sensor-data";
+    } else {
+      fullUrl += "/api/sensor-data";
+    }
+  }
+
   Serial.print("📡 Posting to Render: ");
-  Serial.println(serverUrl);
+  Serial.println(fullUrl);
 
   HTTPClient http;
-  bool isHttps = String(serverUrl).startsWith("https://");
+  bool isHttps = fullUrl.startsWith("https://");
 
   if (isHttps) {
     WiFiClientSecure secureClient;
     secureClient.setInsecure(); // Permits ESP8266 to communicate over Render's SSL without hardcoded certs
-    if (http.begin(secureClient, serverUrl)) {
+    if (http.begin(secureClient, fullUrl)) {
       http.addHeader("Content-Type", "application/json");
       int httpCode = http.POST(jsonPayload);
       lastCloudStatus = httpCode;
@@ -359,7 +371,7 @@ void sendTelemetry() {
     }
   } else {
     WiFiClient client;
-    if (http.begin(client, serverUrl)) {
+    if (http.begin(client, fullUrl)) {
       http.addHeader("Content-Type", "application/json");
       int httpCode = http.POST(jsonPayload);
       lastCloudStatus = httpCode;
