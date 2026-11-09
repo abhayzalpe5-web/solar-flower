@@ -201,61 +201,68 @@ void readSensors() {
   Serial.println(cost_INR, 3);
 }
 
-// Display Live Readings on 1.3" OLED Screen
+// Display All Telemetry in a Single High-Density Block Format (No Slideshow)
 void updateOledDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // Header Bar
-  display.fillRect(0, 0, 128, 12, SSD1306_WHITE);
-  display.setTextColor(SSD1306_BLACK);
+  // 1. Outer Border around the entire screen
+  display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
+
+  // 2. Grid Dividers creating 5 distinct instrument blocks
+  display.drawLine(64, 0, 64, 48, SSD1306_WHITE);  // Vertical center line
+  display.drawLine(0, 24, 128, 24, SSD1306_WHITE); // Horizontal line between row 1 and row 2
+  display.drawLine(0, 48, 128, 48, SSD1306_WHITE); // Horizontal line above bottom cost bar
+
   display.setTextSize(1);
-  display.setCursor(4, 2);
-  display.print("SOLAR FLOWER");
 
-  // WiFi status badge
-  display.setCursor(95, 2);
-  if (WiFi.status() == WL_CONNECTED) {
-    display.print("[WIFI]");
-  } else {
-    display.print("[NO-WF]");
-  }
-
-  // Display Telemetry in 2-column or list format
-  display.setTextColor(SSD1306_WHITE);
-
-  // Voltage
-  display.setCursor(0, 16);
-  display.print("V: ");
+  // --- BLOCK 1: VOLTAGE (Top-Left: 0,0 to 64,24) ---
+  display.setCursor(4, 3);
+  display.print("VOLT (V)");
+  display.setCursor(6, 13);
   display.print(busVoltage_V, 2);
   display.print(" V");
 
-  // Current
-  display.setCursor(68, 16);
-  display.print("I: ");
-  display.print(current_mA, 0);
-  display.print("mA");
+  // --- BLOCK 2: CURRENT (Top-Right: 64,0 to 128,24) ---
+  display.setCursor(68, 3);
+  display.print("CURR (I)");
+  display.setCursor(70, 13);
+  if (current_mA >= 1000.0) {
+    display.print(current_mA / 1000.0, 2);
+    display.print(" A");
+  } else {
+    display.print(current_mA, 0);
+    display.print(" mA");
+  }
 
-  // Power
-  display.setCursor(0, 28);
-  display.print("P: ");
+  // --- BLOCK 3: POWER (Mid-Left: 0,24 to 64,48) ---
+  display.setCursor(4, 27);
+  display.print("POW (W)");
+  display.setCursor(6, 37);
   display.print(power_W, 2);
   display.print(" W");
 
-  // Energy
-  display.setCursor(68, 28);
-  display.print("E: ");
-  display.print(energy_Wh, 1);
-  display.print("Wh");
+  // --- BLOCK 4: ENERGY (Mid-Right: 64,24 to 128,48) ---
+  display.setCursor(68, 27);
+  display.print("ENERGY");
+  display.setCursor(70, 37);
+  if (energy_Wh >= 1000.0) {
+    display.print(energy_kWh, 3);
+    display.print(" kWh");
+  } else {
+    display.print(energy_Wh, 1);
+    display.print(" Wh");
+  }
 
-  // Cost
-  display.setCursor(0, 42);
-  display.print("Cost: INR ");
+  // --- BLOCK 5: COST & RATE (Bottom Bar: 0,48 to 128,64) ---
+  // Inverted white background for high contrast highlight
+  display.fillRect(1, 49, 126, 14, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK); // Black text on white bar
+  display.setCursor(4, 52);
+  display.print("Rs:");
   display.print(cost_INR, 2);
-
-  // Rate tag
-  display.setCursor(0, 54);
-  display.print("@ 4.32/kWh | 5s poll");
+  display.setCursor(68, 52);
+  display.print("@ 4.32/kWh");
 
   display.display();
 }
