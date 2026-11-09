@@ -1,5 +1,7 @@
 # 🌻 Solar Flower - IoT Smart DC Energy Meter
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/abhayzalpe5-web/solar-flower)
+
 A professional, real-time IoT DC energy metering and billing web application powered by **ESP8266**, **INA219**, and a **1.3" I2C OLED display**. The system continuously monitors voltage, current, power, cumulative energy consumption, and real-time electricity cost in Indian Rupees (₹4.32/kWh), logging records to an SQLite database every 5 seconds.
 
 > **Project Attribution:**  
