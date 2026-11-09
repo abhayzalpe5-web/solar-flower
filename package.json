@@ -1,0 +1,30 @@
+{
+  "name": "solar-flower",
+  "version": "1.0.0",
+  "description": "Smart Solar Flower - IoT Smart Energy Meter Web Application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "iot",
+    "esp8266",
+    "energy-meter",
+    "ina219",
+    "solar-flower",
+    "render"
+  ],
+  "author": "madmax, Dept. of Electrical Engineering, GCOEY",
+  "license": "MIT",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "sqlite3": "^5.1.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

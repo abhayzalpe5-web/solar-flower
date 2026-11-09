@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: smart-solar-flower
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_PASSWORD
+        value: "2702"
+      - key: RATE_PER_UNIT
+        value: "4.32"
+      - key: SESSION_SECRET
+        generateValue: true
+

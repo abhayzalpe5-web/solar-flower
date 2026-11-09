@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solar Flower - Smart DC Energy Meter Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-100 text-slate-800 flex flex-col min-h-screen antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand & Title -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+          <i class="fa-solid fa-sun text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-lg font-bold text-slate-900 tracking-tight">Solar Flower</h1>
+            <span class="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider">IoT Meter</span>
+          </div>
+          <p class="text-[11px] text-slate-500 font-medium">Smart DC Energy & Cost Monitor</p>
+        </div>
+      </div>
+
+      <!-- Live Status & Clock -->
+      <div class="flex items-center space-x-3 sm:space-x-5">
+        <!-- Status Indicator -->
+        <div id="connectionStatus" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+          <span class="relative flex h-2.5 w-2.5">
+            <span id="pingPulse" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span id="pingDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span id="statusText">Connecting...</span>
+        </div>
+
+        <!-- Clock in Asia/Kolkata -->
+        <div class="hidden md:flex items-center space-x-1.5 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+          <i class="fa-regular fa-clock text-emerald-600"></i>
+          <span id="kolkataClock" class="font-mono">--:--:-- IST</span>
+        </div>
+
+        <!-- Quick Actions & Logout -->
+        <div class="flex items-center space-x-2">
+          <!-- Simulate Test Reading Button -->
+          <button 
+            onclick="simulateReading()" 
+            title="Send test telemetry reading (Simulate ESP8266)" 
+            class="px-2.5 py-1.5 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-medium rounded-lg border border-amber-200 transition-colors flex items-center space-x-1.5"
+          >
+            <i class="fa-solid fa-bolt text-amber-600"></i>
+            <span class="hidden sm:inline">Simulate Data</span>
+          </button>
+
+          <!-- Refresh Button -->
+          <button 
+            onclick="manualRefresh()" 
+            title="Refresh All Data" 
+            class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+          >
+            <i class="fa-solid fa-rotate text-sm" id="refreshIcon"></i>
+          </button>
+
+          <!-- Logout Button -->
+          <button 
+            onclick="handleLogout()" 
+            class="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors flex items-center space-x-1"
+          >
+            <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+            <span>Logout</span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="bg-white border-b border-slate-200 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex space-x-8">
+        <button class="border-b-2 border-emerald-600 py-3.5 px-1 text-sm font-semibold text-emerald-700 flex items-center space-x-2">
+          <i class="fa-solid fa-chart-line text-emerald-600"></i>
+          <span>Tab 1: Energy Meter Readings</span>
+          <span class="ml-2 bg-emerald-50 text-emerald-700 text-xs px-2 py-0.5 rounded-full border border-emerald-200">5s live poll</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+    
+    <!-- SECTION 1: INNOVATIVE REAL-TIME GAUGES & SEEK BARS -->
+    <section>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200/80 mb-5 gap-2">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
+            <i class="fa-solid fa-gauge-high text-emerald-600"></i>
+            <span>Real-Time Sensor Telemetry (INA219)</span>
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">High-precision DC bus electrical measurements refreshed every 5 seconds</p>
+        </div>
+        <div class="flex items-center space-x-2 text-xs">
+          <span class="px-2.5 py-1 bg-amber-50 text-amber-800 rounded-lg border border-amber-200 font-medium">
+            <i class="fa-solid fa-tag text-amber-600 mr-1"></i> Tariff: ₹4.32 / Unit (kWh)
+          </span>
+          <span id="lastUpdatedBadge" class="text-slate-400 text-[11px]">Updated: Just now</span>
+        </div>
+      </div>
+
+      <!-- Grid of Innovative Gauges & Seek Bars -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        
+        <!-- CARD 1: VOLTAGE (V) -->
+        <div class="metric-card bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Bus Voltage</span>
+            <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm border border-amber-100">
+              <i class="fa-solid fa-bolt"></i>
+            </span>
+          </div>
+          
+          <!-- Circular Gauge Representation -->
+          <div class="flex items-center justify-center my-3 relative">
+            <svg class="gauge-svg w-28 h-28" viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40" stroke-width="8" fill="none" />
+              <circle id="voltageGaugeCircle" class="gauge-value" cx="50" cy="50" r="40" stroke-width="8" fill="none" 
+                stroke="#f59e0b" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span id="valVoltage" class="text-2xl font-black text-slate-900 tracking-tight">0.00</span>
+              <span class="text-[10px] font-bold uppercase text-amber-600">Volts (V)</span>
+            </div>
+          </div>
+
+          <!-- Innovative Seek Bar Structure -->
+          <div class="mt-2 space-y-1.5">
+            <div class="flex justify-between text-[11px] font-medium text-slate-500">
+              <span>0 V</span>
+              <span id="voltagePct" class="text-amber-600 font-semibold">0%</span>
+              <span>26 V Max</span>
+            </div>
+            <div class="seek-bar-track">
+              <div id="voltageSeekBar" class="seek-bar-fill bg-gradient-to-r from-amber-400 to-amber-500" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2: CURRENT (mA / A) -->
+        <div class="metric-card bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">DC Current</span>
+            <span class="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-sm border border-sky-100">
+              <i class="fa-solid fa-wave-square"></i>
+            </span>
+          </div>
+
+          <!-- Circular Gauge -->
+          <div class="flex items-center justify-center my-3 relative">
+            <svg class="gauge-svg w-28 h-28" viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40" stroke-width="8" fill="none" />
+              <circle id="currentGaugeCircle" class="gauge-value" cx="50" cy="50" r="40" stroke-width="8" fill="none" 
+                stroke="#0284c7" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span id="valCurrent" class="text-2xl font-black text-slate-900 tracking-tight">0.0</span>
+              <span class="text-[10px] font-bold uppercase text-sky-600">mA</span>
+            </div>
+          </div>
+
+          <!-- Seek Bar Structure -->
+          <div class="mt-2 space-y-1.5">
+            <div class="flex justify-between text-[11px] font-medium text-slate-500">
+              <span id="valCurrentAmps">0.000 A</span>
+              <span id="currentPct" class="text-sky-600 font-semibold">0%</span>
+              <span>3.2 A Max</span>
+            </div>
+            <div class="seek-bar-track">
+              <div id="currentSeekBar" class="seek-bar-fill bg-gradient-to-r from-sky-400 to-blue-600" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 3: POWER (W) -->
+        <div class="metric-card bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Instant Power</span>
+            <span class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm border border-emerald-100">
+              <i class="fa-solid fa-plug-circle-bolt"></i>
+            </span>
+          </div>
+
+          <!-- Circular Gauge -->
+          <div class="flex items-center justify-center my-3 relative">
+            <svg class="gauge-svg w-28 h-28" viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40" stroke-width="8" fill="none" />
+              <circle id="powerGaugeCircle" class="gauge-value" cx="50" cy="50" r="40" stroke-width="8" fill="none" 
+                stroke="#10b981" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span id="valPower" class="text-2xl font-black text-slate-900 tracking-tight">0.00</span>
+              <span class="text-[10px] font-bold uppercase text-emerald-600">Watts (W)</span>
+            </div>
+          </div>
+
+          <!-- Seek Bar Structure -->
+          <div class="mt-2 space-y-1.5">
+            <div class="flex justify-between text-[11px] font-medium text-slate-500">
+              <span>0 W</span>
+              <span id="powerPct" class="text-emerald-600 font-semibold">0%</span>
+              <span>80 W Max</span>
+            </div>
+            <div class="seek-bar-track">
+              <div id="powerSeekBar" class="seek-bar-fill bg-gradient-to-r from-emerald-400 to-teal-500" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 4: ENERGY (Wh / kWh) -->
+        <div class="metric-card bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Energy (Units)</span>
+            <span class="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-sm border border-purple-100">
+              <i class="fa-solid fa-battery-three-quarters"></i>
+            </span>
+          </div>
+
+          <!-- Circular Gauge -->
+          <div class="flex items-center justify-center my-3 relative">
+            <svg class="gauge-svg w-28 h-28" viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40" stroke-width="8" fill="none" />
+              <circle id="energyGaugeCircle" class="gauge-value" cx="50" cy="50" r="40" stroke-width="8" fill="none" 
+                stroke="#a855f7" stroke-dasharray="251.2" stroke-dashoffset="251.2" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span id="valEnergyKwh" class="text-2xl font-black text-slate-900 tracking-tight">0.000</span>
+              <span class="text-[10px] font-bold uppercase text-purple-600">kWh (Units)</span>
+            </div>
+          </div>
+
+          <!-- Seek Bar Structure -->
+          <div class="mt-2 space-y-1.5">
+            <div class="flex justify-between text-[11px] font-medium text-slate-500">
+              <span id="valEnergyWh">0.00 Wh</span>
+              <span id="energyPct" class="text-purple-600 font-semibold">0%</span>
+              <span>Target 1 kWh</span>
+            </div>
+            <div class="seek-bar-track">
+              <div id="energySeekBar" class="seek-bar-fill bg-gradient-to-r from-purple-400 to-indigo-500" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 5: TOTAL COST (₹ 4.32 / UNIT) -->
+        <div class="metric-card bg-gradient-to-br from-emerald-600 to-teal-800 rounded-2xl p-5 text-white shadow-md shadow-emerald-700/20 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-100">Total Cost (INR)</span>
+            <span class="w-8 h-8 rounded-xl bg-white/20 text-white flex items-center justify-center text-sm backdrop-blur-sm">
+              <i class="fa-solid fa-indian-rupee-sign"></i>
+            </span>
+          </div>
+
+          <!-- Total Cost Display -->
+          <div class="my-4 text-center">
+            <div class="flex items-center justify-center space-x-1">
+              <span class="text-xl font-bold text-emerald-200">₹</span>
+              <span id="valTotalCost" class="text-3xl font-black tracking-tight text-white">0.00</span>
+            </div>
+            <p class="text-[11px] text-emerald-100 mt-1 font-medium">Accumulated Cost</p>
+          </div>
+
+          <!-- Pricing Formula Badge -->
+          <div class="bg-black/20 backdrop-blur-sm rounded-xl p-2.5 text-xs text-emerald-100 border border-white/10 space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span>Base Rate:</span>
+              <span class="font-bold text-white">₹4.32 / kWh</span>
+            </div>
+            <div class="flex justify-between text-[11px]">
+              <span>Formula:</span>
+              <span class="font-mono text-[10px] text-emerald-200">Units × ₹4.32</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION 2: CHARTS & HISTORICAL SAVED RECORDS -->
+    <section class="space-y-6">
+      
+      <!-- Graph & Historical Analytics Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200/80 gap-2">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
+            <i class="fa-solid fa-chart-area text-emerald-600"></i>
+            <span>Telemetry Trends & Saved Records</span>
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">Real-time graphs and paginated historical log with Asia/Kolkata (+05:30) timestamps</p>
+        </div>
+      </div>
+
+      <!-- Graph Card (Chart.js) -->
+      <div class="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Metric View:</span>
+            <div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-semibold">
+              <button onclick="switchChartMetric('all')" id="tabMetricAll" class="px-3 py-1 rounded-lg bg-white text-emerald-700 shadow-xs transition-all">All</button>
+              <button onclick="switchChartMetric('voltage')" id="tabMetricV" class="px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Voltage</button>
+              <button onclick="switchChartMetric('current')" id="tabMetricI" class="px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Current</button>
+              <button onclick="switchChartMetric('power')" id="tabMetricP" class="px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Power</button>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-500 flex items-center space-x-3">
+            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span><span>Voltage (V)</span></span>
+            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span><span>Current (mA)</span></span>
+            <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span><span>Power (W)</span></span>
+          </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div class="relative w-full h-72 sm:h-80">
+          <canvas id="telemetryChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Saved Records Table Card -->
+      <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+        
+        <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 flex items-center space-x-2">
+              <i class="fa-solid fa-database text-emerald-600 text-sm"></i>
+              <span>Saved Energy Meter Records</span>
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Showing latest records first (20 records per page) • Timezone: Asia/Kolkata (+05:30)</p>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <span id="recordCountBadge" class="text-xs font-semibold px-3 py-1 bg-slate-200/70 text-slate-700 rounded-full">
+              Loading records...
+            </span>
+          </div>
+        </div>
+
+        <!-- Responsive Table -->
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                <th class="py-3 px-4"># ID</th>
+                <th class="py-3 px-4">Date & Time (+05:30 IST)</th>
+                <th class="py-3 px-4 text-right">Voltage (V)</th>
+                <th class="py-3 px-4 text-right">Current (mA)</th>
+                <th class="py-3 px-4 text-right">Power (W)</th>
+                <th class="py-3 px-4 text-right">Energy (Wh / Units)</th>
+                <th class="py-3 px-4 text-right">Cost (₹ @ 4.32)</th>
+                <th class="py-3 px-4 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="recordsTableBody" class="divide-y divide-slate-100">
+              <!-- Dynamically populated rows -->
+              <tr>
+                <td colspan="8" class="text-center py-10 text-slate-400">
+                  <i class="fa-solid fa-circle-notch fa-spin text-xl text-emerald-600 mb-2"></i>
+                  <p>Loading energy meter readings...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar (20 records at a time, latest records first) -->
+        <div class="p-4 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div class="text-xs text-slate-500">
+            Showing <span id="pageRangeStart" class="font-semibold text-slate-700">0</span> to 
+            <span id="pageRangeEnd" class="font-semibold text-slate-700">0</span> of 
+            <span id="pageTotalRecords" class="font-semibold text-slate-700">0</span> records
+          </div>
+
+          <div class="flex items-center space-x-1" id="paginationControls">
+            <button 
+              id="btnPrevPage" 
+              onclick="changePage(-1)" 
+              disabled 
+              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px] mr-1"></i> Prev
+            </button>
+            <div id="pageNumberPills" class="flex items-center space-x-1"></div>
+            <button 
+              id="btnNextPage" 
+              onclick="changePage(1)" 
+              disabled 
+              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px] ml-1"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="fixed inset-0 z-50 hidden bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+      <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-lg">
+        <i class="fa-solid fa-trash-can"></i>
+      </div>
+      <div>
+        <h4 class="text-base font-bold text-slate-900">Delete Telemetry Record?</h4>
+        <p class="text-xs text-slate-500 mt-1">
+          Are you sure you want to delete reading #<span id="deleteTargetId" class="font-mono font-bold text-slate-700"></span>? This action cannot be undone.
+        </p>
+      </div>
+      <div class="flex items-center justify-center space-x-3 pt-2">
+        <button 
+          onclick="closeDeleteModal()" 
+          class="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+        >
+          Cancel
+        </button>
+        <button 
+          id="confirmDeleteBtn"
+          onclick="executeDelete()" 
+          class="px-4 py-2 text-xs font-semibold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-colors"
+        >
+          Yes, Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Professional Footer -->
+  <footer class="w-full bg-white border-t border-slate-200 py-4 text-center mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <p class="text-xs text-slate-600 font-medium">
+        designed and developed by madmax , dept. of Electrical Engineering,GCOEY
+      </p>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
+

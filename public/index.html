@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Solar Flower Smart Energy Meter</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d'
+            },
+            solar: {
+              amber: '#f59e0b',
+              gold: '#fbbf24',
+              sun: '#eab308'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-800 flex flex-col min-h-screen antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Header Banner -->
+  <header class="w-full bg-white border-b border-slate-200 py-4 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+          <i class="fa-solid fa-sun text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-slate-900">Solar Flower</h1>
+          <p class="text-xs text-slate-500 font-medium">Smart DC Energy Monitoring System</p>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center space-x-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+        <i class="fa-solid fa-microchip text-emerald-600"></i>
+        <span>ESP8266 + INA219 + OLED 1.3"</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Login Card Container -->
+  <main class="flex-grow flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+      
+      <!-- Card Box -->
+      <div class="bg-white rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-8 sm:p-10 relative overflow-hidden">
+        
+        <!-- Subtle Top Glow -->
+        <div class="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-emerald-500 to-teal-500"></div>
+
+        <div class="text-center mb-8">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 mb-4 shadow-inner">
+            <i class="fa-solid fa-lock text-2xl"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-slate-900 tracking-tight">System Access</h2>
+          <p class="text-sm text-slate-500 mt-1">Enter your password to access the energy meter dashboard</p>
+        </div>
+
+        <!-- Alert Message Container -->
+        <div id="alertBox" class="hidden mb-5 p-3 rounded-xl text-sm flex items-center space-x-2">
+          <i id="alertIcon" class="fa-solid fa-circle-exclamation text-base"></i>
+          <span id="alertMessage" class="font-medium"></span>
+        </div>
+
+        <!-- Form (Password Only) -->
+        <form id="loginForm" class="space-y-5" onsubmit="handleLogin(event)">
+          <div>
+            <label for="password" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+              Access Password
+            </label>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <i class="fa-solid fa-key"></i>
+              </div>
+              <input 
+                type="password" 
+                id="password" 
+                name="password" 
+                required 
+                autofocus
+                placeholder="Enter password..."
+                class="w-full pl-10 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm transition-all shadow-sm"
+              >
+              <button 
+                type="button" 
+                onclick="togglePasswordVisibility()" 
+                class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
+                title="Toggle password visibility"
+              >
+                <i id="eyeIcon" class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            id="loginBtn"
+            class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-xl text-sm shadow-md shadow-emerald-600/25 transition-all duration-200 flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+          >
+            <span>Unlock Dashboard</span>
+            <i class="fa-solid fa-arrow-right text-xs"></i>
+          </button>
+        </form>
+
+        <!-- Technical specifications badge -->
+        <div class="mt-8 pt-6 border-t border-slate-100 flex items-center justify-around text-center text-xs text-slate-500">
+          <div>
+            <span class="block font-semibold text-slate-700">₹4.32</span>
+            <span class="text-[11px] text-slate-400">per Unit (kWh)</span>
+          </div>
+          <div class="h-6 w-px bg-slate-200"></div>
+          <div>
+            <span class="block font-semibold text-slate-700">5 Seconds</span>
+            <span class="text-[11px] text-slate-400">Refresh Rate</span>
+          </div>
+          <div class="h-6 w-px bg-slate-200"></div>
+          <div>
+            <span class="block font-semibold text-slate-700">+05:30 IST</span>
+            <span class="text-[11px] text-slate-400">Asia/Kolkata</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Professional Footer -->
+  <footer class="w-full bg-white border-t border-slate-200 py-4 text-center">
+    <div class="max-w-6xl mx-auto px-4">
+      <p class="text-xs text-slate-600 font-medium">
+        designed and developed by madmax , dept. of Electrical Engineering,GCOEY
+      </p>
+    </div>
+  </footer>
+
+  <script src="/js/auth.js"></script>
+</body>
+</html>
+
