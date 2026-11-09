@@ -1,51 +1,78 @@
+/*
+ * =========================================================================================
+ * Project Name : Solar Flower - Smart IoT DC Energy Meter
+ * Institution  : Dept. of Electrical Engineering, GCOEY
+ * Developer    : madmax
+ * Hardware     : ESP8266 (NodeMCU / Wemos D1 Mini)
+ * Sensors      : INA219 DC Current & Voltage Sensor
+ * Display      : 1.3" I2C OLED Display (128x64) (SH1106 / SSD1306)
+ *
+ * Pin Connections:
+ *   ESP8266 D1 (GPIO 5) -> OLED SCK/SCL & INA219 SCL
+ *   ESP8266 D2 (GPIO 4) -> OLED SDA     & INA219 SDA
+ *   ESP8266 3V3 / 5V    -> VCC of OLED & INA219
+ *   ESP8266 GND         -> GND of OLED, INA219, Source(-) and Load(-)
+ *
+ * Shunt Connections:
+ *   DC Source (+) -> INA219 Vin-
+ *   DC Load (+)   -> INA219 Vin+
+ *   Common GND    -> INA219 GND & Source (-) & Load (-)
+ *   * Note: Current flows Vin- to Vin+, inverted using abs() for positive measurement.
+ *
+ * WiFi Configuration:
+ *   SSID     : SPIDERMAN
+ *   Password : 000000000
+ *
+ * OLED Format:
+ *   - 2-second intro title on boot: "SMART ENERGY METER"
+ *   - Continuous single-screen 5-block dashboard format (strictly NO slideshow)
+ *   - Shows Voltage, Current, Power, Energy, Total Cost, and Render cloud sync status.
+ *
+ * Cloud Integration:
+ *   - Sends live telemetry every 5 seconds via HTTPS POST to your Render deployment.
+ * =========================================================================================
+ */
 
-#include <Adafruit_INA219.h>
-#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
-
-// For 1.3" OLED: If using Adafruit_SH1106 library (most common for 1.3" 128x64
-// OLED) Or Adafruit_SSD1306. Here we include standard U8g2 or Adafruit GFX
-// support.
+#include <Adafruit_INA219.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// OLED Configuration (128x64)
+// OLED Display Configuration (128x64)
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-#define OLED_I2C_ADDRESS 0x3C // Default 1.3" OLED I2C Address
+#define OLED_I2C_ADDRESS 0x3C // Standard I2C address for 1.3" OLED (or 0x3D)
 
-// Create display instance
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
-// Create INA219 instance (Default I2C address 0x40)
 Adafruit_INA219 ina219;
 
-// WiFi Credentials
-const char *ssid = "SPIDERMAN";
-const char *password = "000000000";
+// WiFi Settings (Pre-configured)
+const char* ssid     = "SPIDERMAN";
+const char* password = "000000000";
 
-// Backend Server Configuration
-// Replace with your deployed Render URL (e.g.
-// "https://smart-solar-flower.onrender.com/api/sensor-data") or your local
-// computer IP for local testing (e.g.
-// "http://192.168.1.100:3000/api/sensor-data")
-const char *serverUrl = "http://YOUR-RENDER-APP.onrender.com/api/sensor-data";
+// Render Cloud Backend URL
+// Replace "smart-solar-flower" with your exact Render app name if different
+const char* serverUrl = "https://smart-solar-flower.onrender.com/api/sensor-data";
 
-// Measurement and Energy Accumulation Variables
+// Live Measurement & Accumulator Variables
 float busVoltage_V = 0.0;
-float current_mA = 0.0;
-float power_W = 0.0;
-float energy_Wh = 0.0;
-float energy_kWh = 0.0;
-float cost_INR = 0.0;
-const float tariffPerUnit = 4.32; // Rupees per kWh
+float current_mA   = 0.0;
+float power_W      = 0.0;
+float energy_Wh    = 0.0;
+float energy_kWh   = 0.0;
+float cost_INR     = 0.0;
+const float tariffPerUnit = 4.32; // ₹4.32 per kWh (Unit)
 
+// Telemetry & Sync State
 unsigned long lastMillis = 0;
-const unsigned long interval = 5000; // 5 seconds interval
+const unsigned long interval = 5000; // Strictly 5 seconds interval
+int lastCloudStatus = 0;             // HTTP response code from Render (200/201 = success)
+bool cloudSyncSuccess = false;
 
 // Function Prototypes
 void showIntroSplash();
@@ -55,51 +82,58 @@ void sendTelemetry();
 
 void setup() {
   Serial.begin(115200);
-  delay(100);
-  Serial.println("\n--- Starting Smart Solar Flower Energy Meter ---");
+  delay(150);
+  Serial.println("\n========================================================");
+  Serial.println("🌻 SOLAR FLOWER - SMART DC ENERGY METER (ESP8266)");
+  Serial.println("⚡ Dept. of Electrical Engineering, GCOEY | madmax");
+  Serial.println("========================================================");
 
-  // Initialize I2C with ESP8266 pins: D2=SDA (GPIO4), D1=SCL (GPIO5)
+  // Initialize I2C Bus on ESP8266 pins: D1 = SCL (GPIO 5), D2 = SDA (GPIO 4)
   Wire.begin(4, 5);
 
-  // Initialize OLED Display
+  // Initialize 1.3" OLED Display
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS)) {
-    Serial.println(F("OLED allocation failed. Trying 0x3D..."));
+    Serial.println(F("OLED not found on 0x3C. Trying address 0x3D..."));
     display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
   }
 
-  // Show starting 2-second intro title
+  // 1. Show the starting 2-second intro title
   showIntroSplash();
 
-  // Initialize INA219
+  // 2. Initialize INA219 Current & Voltage Sensor
   if (!ina219.begin()) {
-    Serial.println("Failed to find INA219 chip. Check wiring!");
+    Serial.println("❌ INA219 chip not detected! Check D1 (SCL) & D2 (SDA) wiring.");
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(10, 20);
+    display.setCursor(12, 18);
     display.println("INA219 NOT FOUND!");
-    display.setCursor(10, 35);
-    display.println("Check D1(SCL)/D2(SDA)");
+    display.setCursor(6, 34);
+    display.println("Check D1(SCL) D2(SDA)");
     display.display();
-    delay(3000);
+    delay(2500);
   } else {
-    Serial.println("INA219 Current & Voltage Sensor connected successfully.");
-    ina219.setCalibration_32V_2A(); // Configure standard INA219 range
+    Serial.println("✅ INA219 Sensor initialized successfully.");
+    ina219.setCalibration_32V_2A(); // Up to 32V and 2A (or 3.2A peak)
   }
 
-  // Connect to WiFi
+  // 3. Connect to WiFi: SPIDERMAN
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
+  Serial.print("Connecting to WiFi (");
+  Serial.print(ssid);
+  Serial.println(")...");
 
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 10);
-  display.println("Connecting to WiFi:");
-  display.setCursor(0, 25);
+  display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
+  display.setCursor(14, 12);
+  display.println("WIFI CONNECTING");
+  display.setCursor(26, 26);
   display.println(ssid);
+  display.setCursor(20, 44);
+  display.println("Please wait...");
   display.display();
 
   int wifiRetries = 0;
@@ -110,120 +144,102 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected!");
-    Serial.print("IP Address: ");
+    Serial.println("\n✅ WiFi Connected Successfully!");
+    Serial.print("ESP8266 IP Address: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\nWiFi connection pending. Will retry in loop...");
+    Serial.println("\n⚠️ WiFi not connected yet. Will auto-reconnect in loop...");
   }
 
+  // Initial sensor read and display
+  readSensors();
+  updateOledDisplay();
   lastMillis = millis();
 }
 
 void loop() {
+  // Ensure WiFi auto-reconnects if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.reconnect();
+  }
+
   unsigned long currentMillis = millis();
 
-  // Run every 5 seconds
+  // Execute strictly every 5 seconds
   if (currentMillis - lastMillis >= interval) {
     float dtHours = (currentMillis - lastMillis) / 3600000.0;
     lastMillis = currentMillis;
 
-    // Read INA219 Sensor Data
+    // 1. Read INA219 Live Sensor Data
     readSensors();
 
-    // Accumulate Energy (Wh) and calculate Cost (₹)
+    // 2. Accumulate Energy (Wh / kWh) and Calculate Real-Time Cost (₹ @ 4.32)
     energy_Wh += (power_W * dtHours);
     energy_kWh = energy_Wh / 1000.0;
     cost_INR = energy_kWh * tariffPerUnit;
 
-    // Update 1.3" OLED Display
-    updateOledDisplay();
-
-    // Transmit telemetry to Web Application via HTTP POST
+    // 3. Send Telemetry to Render Cloud via HTTPS POST
     sendTelemetry();
+
+    // 4. Update 1.3" OLED Display in Single Block Format (with sync indicator)
+    updateOledDisplay();
   }
 }
 
-// 2-Second Intro Title Display
+// =========================================================================================
+// 1. INTRO SPLASH: Displays "SMART ENERGY METER" for strictly 2 seconds on boot
+// =========================================================================================
 void showIntroSplash() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // Outer decorative border
+  // High-precision double frame border
   display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
   display.drawRect(2, 2, 124, 60, SSD1306_WHITE);
 
-  // App Title
+  // Title: SMART ENERGY METER
   display.setTextSize(1);
-  display.setCursor(24, 8);
+  display.setCursor(28, 8);
   display.println("SOLAR FLOWER");
 
-  display.setTextSize(1);
-  display.setCursor(14, 22);
+  display.setCursor(16, 22);
   display.println("SMART ENERGY");
-  display.setCursor(44, 34);
+  display.setCursor(46, 34);
   display.println("METER");
 
-  // Footer attribution
-  display.setTextSize(1);
-  display.setCursor(28, 50);
+  // Attribution Footer
+  display.setCursor(30, 48);
   display.println("GCOEY - EE");
 
   display.display();
-  delay(2000); // Intro screen displayed strictly for 2 seconds
+  delay(2000); // 2-second intro screen duration
 }
 
-// Read INA219 Measurements
-void readSensors() {
-  float bus_v = ina219.getBusVoltage_V();
-  float raw_current = ina219.getCurrent_mA();
-
-  // Since Source is at Vin- and Load is at Vin+, current reading is negative.
-  // We use abs() to record positive consumed current.
-  current_mA = abs(raw_current);
-  busVoltage_V = bus_v;
-  power_W = (busVoltage_V * current_mA) / 1000.0;
-
-  Serial.println("----------------------------------------");
-  Serial.print("Voltage  : ");
-  Serial.print(busVoltage_V, 2);
-  Serial.println(" V");
-  Serial.print("Current  : ");
-  Serial.print(current_mA, 1);
-  Serial.println(" mA");
-  Serial.print("Power    : ");
-  Serial.print(power_W, 2);
-  Serial.println(" W");
-  Serial.print("Energy   : ");
-  Serial.print(energy_Wh, 2);
-  Serial.println(" Wh");
-  Serial.print("Cost     : INR ");
-  Serial.println(cost_INR, 3);
-}
-
-// Display All Telemetry in a Single High-Density Block Format (No Slideshow)
+// =========================================================================================
+// 2. LIVE TELEMETRY: All readings on one screen in a 5-block dashboard grid (No Slideshow)
+// =========================================================================================
 void updateOledDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // 1. Outer Border around the entire screen
+  // Outer Screen Border
   display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
 
-  // 2. Grid Dividers creating 5 distinct instrument blocks
-  display.drawLine(64, 0, 64, 48, SSD1306_WHITE);  // Vertical center line
-  display.drawLine(0, 24, 128, 24, SSD1306_WHITE); // Horizontal line between row 1 and row 2
-  display.drawLine(0, 48, 128, 48, SSD1306_WHITE); // Horizontal line above bottom cost bar
+  // Grid Dividers separating the 5 blocks
+  display.drawLine(64, 0, 64, 48, SSD1306_WHITE);  // Vertical divider between left and right blocks
+  display.drawLine(0, 24, 128, 24, SSD1306_WHITE); // Horizontal divider between row 1 and row 2
+  display.drawLine(0, 48, 128, 48, SSD1306_WHITE); // Horizontal divider above bottom cost block
 
   display.setTextSize(1);
 
-  // --- BLOCK 1: VOLTAGE (Top-Left: 0,0 to 64,24) ---
+  // --- BLOCK 1: VOLTAGE (Top-Left Box) ---
   display.setCursor(4, 3);
   display.print("VOLT (V)");
   display.setCursor(6, 13);
   display.print(busVoltage_V, 2);
   display.print(" V");
 
-  // --- BLOCK 2: CURRENT (Top-Right: 64,0 to 128,24) ---
+  // --- BLOCK 2: CURRENT (Top-Right Box) ---
   display.setCursor(68, 3);
   display.print("CURR (I)");
   display.setCursor(70, 13);
@@ -235,14 +251,14 @@ void updateOledDisplay() {
     display.print(" mA");
   }
 
-  // --- BLOCK 3: POWER (Mid-Left: 0,24 to 64,48) ---
+  // --- BLOCK 3: POWER (Mid-Left Box) ---
   display.setCursor(4, 27);
   display.print("POW (W)");
   display.setCursor(6, 37);
   display.print(power_W, 2);
   display.print(" W");
 
-  // --- BLOCK 4: ENERGY (Mid-Right: 64,24 to 128,48) ---
+  // --- BLOCK 4: ENERGY (Mid-Right Box) ---
   display.setCursor(68, 27);
   display.print("ENERGY");
   display.setCursor(70, 37);
@@ -254,27 +270,56 @@ void updateOledDisplay() {
     display.print(" Wh");
   }
 
-  // --- BLOCK 5: COST & RATE (Bottom Bar: 0,48 to 128,64) ---
-  // Inverted white background for high contrast highlight
+  // --- BLOCK 5: COST & RENDER STATUS (Bottom Full-Width Highlight Bar) ---
+  // Inverted white background bar for maximum visibility
   display.fillRect(1, 49, 126, 14, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK); // Black text on white bar
+
   display.setCursor(4, 52);
   display.print("Rs:");
   display.print(cost_INR, 2);
-  display.setCursor(68, 52);
-  display.print("@ 4.32/kWh");
+
+  display.setCursor(60, 52);
+  if (cloudSyncSuccess) {
+    display.print("RNDR:OK 4.32");
+  } else if (WiFi.status() == WL_CONNECTED) {
+    display.print("RNDR:.. 4.32");
+  } else {
+    display.print("NO-WIFI 4.32");
+  }
 
   display.display();
 }
 
-// Send Data to Node.js Backend via HTTP/HTTPS POST
+// =========================================================================================
+// 3. INA219 MEASUREMENT: Handles polarity (Source to Vin-, Load to Vin+)
+// =========================================================================================
+void readSensors() {
+  float bus_v = ina219.getBusVoltage_V();
+  float raw_current = ina219.getCurrent_mA();
+
+  // Inverted shunt wiring: Source at Vin-, Load at Vin+ produces negative raw current.
+  // We apply abs() to ensure positive consumed current, power, and energy.
+  current_mA = abs(raw_current);
+  busVoltage_V = bus_v;
+  power_W = (busVoltage_V * current_mA) / 1000.0;
+
+  Serial.println("--------------------------------------------------------");
+  Serial.printf("[TELEMETRY] V: %.2f V | I: %.1f mA | P: %.2f W | E: %.2f Wh | Cost: Rs %.3f\n",
+                busVoltage_V, current_mA, power_W, energy_Wh, cost_INR);
+}
+
+// =========================================================================================
+// 4. CLOUD TRANSMISSION: Sends JSON payload to Render via HTTPS POST
+// =========================================================================================
 void sendTelemetry() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected. Skipping HTTP post.");
+    Serial.println("⚠️ WiFi not connected. Skipping cloud post.");
+    cloudSyncSuccess = false;
     return;
   }
 
-  // Construct JSON Payload
+  // Construct JSON payload
   String jsonPayload = "{";
   jsonPayload += "\"voltage\":" + String(busVoltage_V, 2) + ",";
   jsonPayload += "\"current\":" + String(current_mA, 2) + ",";
@@ -284,25 +329,31 @@ void sendTelemetry() {
   jsonPayload += "\"cost_inr\":" + String(cost_INR, 4);
   jsonPayload += "}";
 
-  Serial.print("Posting payload to server: ");
-  Serial.println(jsonPayload);
+  Serial.print("📡 Posting to Render: ");
+  Serial.println(serverUrl);
 
   HTTPClient http;
   bool isHttps = String(serverUrl).startsWith("https://");
 
   if (isHttps) {
     WiFiClientSecure secureClient;
-    secureClient.setInsecure(); // Allows ESP8266 to communicate with Render HTTPS
+    secureClient.setInsecure(); // Permits ESP8266 to communicate over Render's SSL without hardcoded certs
     if (http.begin(secureClient, serverUrl)) {
       http.addHeader("Content-Type", "application/json");
       int httpCode = http.POST(jsonPayload);
+      lastCloudStatus = httpCode;
+
       if (httpCode > 0) {
-        Serial.printf("HTTPS Response Code: %d\n", httpCode);
+        Serial.printf("✅ Render HTTP Response Code: %d\n", httpCode);
         if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
-          Serial.println("Server Response: " + http.getString());
+          Serial.println("✅ Data successfully saved in cloud database.");
+          cloudSyncSuccess = true;
+        } else {
+          cloudSyncSuccess = false;
         }
       } else {
-        Serial.printf("HTTPS POST failed, error: %s\n", http.errorToString(httpCode).c_str());
+        Serial.printf("❌ HTTPS POST failed, error: %s\n", http.errorToString(httpCode).c_str());
+        cloudSyncSuccess = false;
       }
       http.end();
     }
@@ -311,13 +362,14 @@ void sendTelemetry() {
     if (http.begin(client, serverUrl)) {
       http.addHeader("Content-Type", "application/json");
       int httpCode = http.POST(jsonPayload);
+      lastCloudStatus = httpCode;
+
       if (httpCode > 0) {
-        Serial.printf("HTTP Response Code: %d\n", httpCode);
-        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
-          Serial.println("Server Response: " + http.getString());
-        }
+        Serial.printf("✅ Render HTTP Response Code: %d\n", httpCode);
+        cloudSyncSuccess = (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED);
       } else {
-        Serial.printf("HTTP POST failed, error: %s\n", http.errorToString(httpCode).c_str());
+        Serial.printf("❌ HTTP POST failed, error: %s\n", http.errorToString(httpCode).c_str());
+        cloudSyncSuccess = false;
       }
       http.end();
     }
